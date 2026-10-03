@@ -1,55 +1,51 @@
-name: Tests
+name: Execute script
 
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
-
-#  schedule:
-#    - cron: '*/5 * * * *'
+  workflow_dispatch:
+  schedule:
+    - cron: '*/5 * * * *'
 
 jobs:
-  tests:
+  run:
     runs-on: ubuntu-latest
     strategy:
       matrix:
         php-versions: ['8.3']
-    name: integration-tests (PHP ${{ matrix.php-versions }})
+    name: execute-script (PHP ${{ matrix.php-versions }})
     steps:
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v2
+      
       - name: Install PHP
         uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php-versions }}
-      - name: Validate composer.json and composer.lock
-        run: composer validate
-
-      - name: Get Composer Cache Directory
-        id: composer-cache
-        run: |
-          echo "::set-output name=dir::$(composer config cache-files-dir)"
-      - uses: actions/cache@v2
-        with:
-          path: ${{ steps.composer-cache.outputs.dir }}
-          key: ${{ runner.os }}-${{ matrix.php-version }}-composer-${{ matrix.dependencies }}-${{ hashFiles('**/composer.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ matrix.php-version }}-composer-${{ matrix.dependencies }}-
-
+          
       - name: Install dependencies
         run: |
-          composer update --prefer-dist --no-progress
-      - name: Run test suite
+          composer install --prefer-dist --no-progress
+          
+      - name: Create fallback blank key filename if missing
         run: |
-          vendor/bin/phpunit --color tests/
+          if [ -z "${{ secrets.OCI_PRIVATE_KEY_FILENAME }}" ]; then
+            echo "OCI_PRIVATE_KEY_FILENAME=key.pem" >> $GITHUB_ENV
+          else
+            echo "OCI_PRIVATE_KEY_FILENAME=${{ secrets.OCI_PRIVATE_KEY_FILENAME }}" >> $GITHUB_ENV
+          fi
+
+      - name: Write OCI Private Key to file
+        run: |
+          echo "${{ secrets.OCI_PRIVATE_KEY }}" > ${{ env.OCI_PRIVATE_KEY_FILENAME }}
+          chmod 600 ${{ env.OCI_PRIVATE_KEY_FILENAME }}
+
+      - name: Run capacity engine loop
+        run: |
+          php index.php
         env:
           OCI_REGION: ${{ secrets.OCI_REGION }}
           OCI_USER_ID: ${{ secrets.OCI_USER_ID }}
           OCI_TENANCY_ID: ${{ secrets.OCI_TENANCY_ID }}
           OCI_KEY_FINGERPRINT: ${{ secrets.OCI_KEY_FINGERPRINT }}
-          OCI_PRIVATE_KEY_FILENAME: ${{ secrets.OCI_PRIVATE_KEY_FILENAME }}
+          OCI_PRIVATE_KEY_FILENAME: ${{ env.OCI_PRIVATE_KEY_FILENAME }}
           OCI_AVAILABILITY_DOMAIN: ${{ secrets.OCI_AVAILABILITY_DOMAIN }}
           OCI_SUBNET_ID: ${{ secrets.OCI_SUBNET_ID }}
           OCI_IMAGE_ID: ${{ secrets.OCI_IMAGE_ID }}
@@ -60,4 +56,3 @@ jobs:
           OCI_SSH_PUBLIC_KEY: ${{ secrets.OCI_SSH_PUBLIC_KEY }}
           TELEGRAM_USER_ID: ${{ secrets.TELEGRAM_USER_ID }}
           TELEGRAM_BOT_API_KEY: ${{ secrets.TELEGRAM_BOT_API_KEY }}
-
